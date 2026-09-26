@@ -1,0 +1,705 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Better Auth models ──────────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Application fields
+  role            Role     @default(TENANT)
+  preferredLocale String   @default("ar")
+  isDisabled      Boolean  @default(false)
+
+  // Auth relations
+  sessions Session[]
+  accounts Account[]
+
+  // Domain relations
+  workerProfile        WorkerProfile?
+  ownedBuildings       Building[]
+  membershipRequests   MembershipRequest[]     @relation("TenantMembershipRequests")
+  decidedMemberships   MembershipRequest[]     @relation("DeciderMembershipRequests")
+  tenancies            Tenancy[]               @relation("TenantTenancies")
+  endedTenancies       Tenancy[]               @relation("TenancyEnder")
+  createdRequests      MaintenanceRequest[]    @relation("RequestCreator")
+  namedTenantRequests  MaintenanceRequest[]    @relation("NamedTenant")
+  offers               Offer[]
+  workerOrders         WorkOrder[]             @relation("WorkerOrders")
+  startedOrders        WorkOrder[]             @relation("OrderStarter")
+  completedOrders      WorkOrder[]             @relation("OrderCompleter")
+  confirmedOrders      WorkOrder[]             @relation("OrderConfirmer")
+  closedOrders         WorkOrder[]             @relation("OrderCloser")
+  cancelledOrders      WorkOrder[]             @relation("OrderCanceller")
+  comments             Comment[]
+  paymentRecords       PaymentRecord[]
+  feedbackGiven        TenantFeedback[]        @relation("FeedbackTenant")
+  moderatedFeedback    TenantFeedback[]        @relation("FeedbackModerator")
+  adminEvaluations     AdminEvaluation[]
+  notifications        Notification[]
+  auditEvents          AuditEvent[]
+  hiddenComments       Comment[]               @relation("CommentHider")
+  attachments          Attachment[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id         String    @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+}
+
+// OTP for email verification during registration
+model EmailOtp {
+  id        String   @id @default(cuid())
+  email     String
+  otp       String
+  name      String
+  password  String   // hashed
+  role      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  TENANT
+  WORKER
+  SUPER_ADMIN
+}
+
+enum WorkerStatus {
+  DRAFT
+  PENDING_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum UnitType {
+  APARTMENT
+  SHOP
+}
+
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum RequestStatus {
+  SUBMITTED
+  PROCUREMENT
+  ASSIGNED
+  IN_PROGRESS
+  AWAITING_TENANT_CONFIRMATION
+  TENANT_CONFIRMED
+  CLOSED
+  REJECTED
+  CANCELLED
+}
+
+enum Urgency {
+  LOW
+  NORMAL
+  URGENT
+}
+
+enum ProcurementMode {
+  DIRECT
+  PUBLIC
+  INVITED
+}
+
+enum ProcurementStatus {
+  DRAFT
+  OPEN
+  AWARDED
+  CLOSED_NO_AWARD
+  CANCELLED
+}
+
+enum OfferStatus {
+  SUBMITTED
+  WITHDRAWN
+  ACCEPTED
+  NOT_SELECTED
+  DECLINED
+}
+
+enum InvitationResponse {
+  PENDING
+  DECLINED
+  OFFERED
+}
+
+enum EvidenceKind {
+  PORTFOLIO
+  CERTIFICATE
+}
+
+enum Audience {
+  TENANT_OWNER
+  JOB_PARTICIPANTS
+}
+
+enum AttachmentContext {
+  REQUEST
+  COMMENT
+  COMPLETION
+  WORKER_EVIDENCE
+  PROCUREMENT_BRIEF
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+}
+
+// ─── Service Taxonomy ────────────────────────────────────────────────────────
+
+model ServiceCategory {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  nameEn       String
+  nameAr       String
+  isActive     Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workerCategories    WorkerCategory[]
+  maintenanceRequests MaintenanceRequest[]
+}
+
+model ServiceArea {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  nameEn    String
+  nameAr    String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  workerAreas WorkerServiceArea[]
+}
+
+// ─── Worker Profile ──────────────────────────────────────────────────────────
+
+model WorkerProfile {
+  id                String       @id @default(cuid())
+  userId            String       @unique
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio               String?
+  status            WorkerStatus @default(DRAFT)
+  currentRevision   Int          @default(0)
+  submittedRevision Int?
+  approvedRevision  Int?
+  submittedAt       DateTime?
+  decidedAt         DateTime?
+  decisionReason    String?
+  reviewedById      String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  categories   WorkerCategory[]
+  areas        WorkerServiceArea[]
+  evaluations  AdminEvaluation[]
+  submissions  WorkerSubmission[]
+  evidences    WorkerEvidence[]
+}
+
+model WorkerCategory {
+  id              String          @id @default(cuid())
+  workerProfileId String
+  workerProfile   WorkerProfile   @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        ServiceCategory @relation(fields: [categoryId], references: [id])
+  experienceYears Int             @default(0)
+
+  @@unique([workerProfileId, categoryId])
+}
+
+model WorkerServiceArea {
+  id              String        @id @default(cuid())
+  workerProfileId String
+  workerProfile   WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  areaId          String
+  area            ServiceArea   @relation(fields: [areaId], references: [id])
+
+  @@unique([workerProfileId, areaId])
+}
+
+model AdminEvaluation {
+  id              String        @id @default(cuid())
+  workerProfileId String
+  workerProfile   WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  profileRevision Int
+  categoryId      String
+  adminId         String
+  admin           User          @relation(fields: [adminId], references: [id])
+  score           Int           // 1–5
+  publicSummary   String
+  privateNotes    String?
+  evaluatedAt     DateTime      @default(now())
+
+  @@unique([workerProfileId, profileRevision, categoryId])
+}
+
+model WorkerSubmission {
+  id              String        @id @default(cuid())
+  workerProfileId String
+  workerProfile   WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  revision        Int
+  snapshot        Json
+  status          WorkerStatus  @default(PENDING_REVIEW)
+  reviewResult    WorkerStatus?
+  reviewReason    String?
+  reviewedAt      DateTime?
+  reviewedById    String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([workerProfileId, revision])
+}
+
+model WorkerEvidence {
+  id                  String        @id @default(cuid())
+  workerProfileId     String
+  workerProfile       WorkerProfile @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  attachmentId        String        @unique
+  attachment          Attachment    @relation(fields: [attachmentId], references: [id])
+  kind                EvidenceKind
+  caption             String?
+  publishConsent      Boolean       @default(false)
+  adminApproved       Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+}
+
+// ─── Buildings & Units ───────────────────────────────────────────────────────
+
+model Building {
+  id         String    @id @default(cuid())
+  ownerId    String
+  owner      User      @relation(fields: [ownerId], references: [id])
+  nameEn     String
+  nameAr     String?
+  address    String
+  areaId     String?
+  joinCode   String    @unique @default(cuid())
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  units Unit[]
+}
+
+model Unit {
+  id         String    @id @default(cuid())
+  buildingId String
+  building   Building  @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  label      String
+  type       UnitType  @default(APARTMENT)
+  floor      String?
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  membershipRequests  MembershipRequest[]
+  tenancies           Tenancy[]
+  maintenanceRequests MaintenanceRequest[]
+
+  @@unique([buildingId, label])
+}
+
+// ─── Membership & Tenancy ────────────────────────────────────────────────────
+
+model MembershipRequest {
+  id          String           @id @default(cuid())
+  unitId      String
+  unit        Unit             @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenantId    String
+  tenant      User             @relation("TenantMembershipRequests", fields: [tenantId], references: [id])
+  status      MembershipStatus @default(PENDING)
+  decidedById String?
+  decidedBy   User?            @relation("DeciderMembershipRequests", fields: [decidedById], references: [id])
+  reason      String?
+  decidedAt   DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenancy Tenancy?
+
+  // Partial unique index (PENDING only) added via raw SQL migration
+}
+
+model Tenancy {
+  id                  String            @id @default(cuid())
+  unitId              String
+  unit                Unit              @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  tenantId            String
+  tenant              User              @relation("TenantTenancies", fields: [tenantId], references: [id])
+  membershipRequestId String?           @unique
+  membershipRequest   MembershipRequest? @relation(fields: [membershipRequestId], references: [id])
+  startedAt           DateTime          @default(now())
+  endedAt             DateTime?
+  endedById           String?
+  endedBy             User?             @relation("TenancyEnder", fields: [endedById], references: [id])
+  endReason           String?
+
+  // Partial unique indexes (endedAt IS NULL) added via raw SQL migration
+}
+
+// ─── Maintenance Requests ────────────────────────────────────────────────────
+
+model MaintenanceRequest {
+  id              String          @id @default(cuid())
+  unitId          String
+  unit            Unit            @relation(fields: [unitId], references: [id])
+  tenancyId       String?
+  namedTenantId   String
+  namedTenant     User            @relation("NamedTenant", fields: [namedTenantId], references: [id])
+  createdById     String
+  createdBy       User            @relation("RequestCreator", fields: [createdById], references: [id])
+  categoryId      String
+  category        ServiceCategory @relation(fields: [categoryId], references: [id])
+  title           String
+  description     String
+  urgency         Urgency         @default(NORMAL)
+  status          RequestStatus   @default(SUBMITTED)
+  desiredDate     DateTime?
+  version         Int             @default(1)
+  relatedRequestId String?
+  cancelReason    String?
+  rejectReason    String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  procurements Procurement[]
+  workOrder    WorkOrder?
+  comments     Comment[]
+  attachments  RequestAttachment[]
+  feedback     TenantFeedback?
+  auditEvents  AuditEvent[]
+}
+
+// ─── Procurement ─────────────────────────────────────────────────────────────
+
+model Procurement {
+  id             String            @id @default(cuid())
+  requestId      String
+  request        MaintenanceRequest @relation(fields: [requestId], references: [id])
+  roundNumber    Int
+  mode           ProcurementMode
+  status         ProcurementStatus @default(DRAFT)
+  briefText      String?
+  categorySnapshot String?
+  areaSnapshot   String?
+  deadline       DateTime?
+  budgetAgorot   Int?
+  directWorkerId String?
+  openedAt       DateTime?
+  closedAt       DateTime?
+  awardedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  invitations TenderInvitation[]
+  offers      Offer[]
+  images      ProcurementImage[]
+
+  @@unique([requestId, roundNumber])
+  // Partial unique index: at most one DRAFT or OPEN per request added via migration
+}
+
+model TenderInvitation {
+  id            String             @id @default(cuid())
+  procurementId String
+  procurement   Procurement        @relation(fields: [procurementId], references: [id], onDelete: Cascade)
+  workerId      String
+  response      InvitationResponse @default(PENDING)
+  invitedAt     DateTime           @default(now())
+
+  @@unique([procurementId, workerId])
+}
+
+model Offer {
+  id              String      @id @default(cuid())
+  procurementId   String
+  procurement     Procurement @relation(fields: [procurementId], references: [id])
+  workerId        String
+  worker          User        @relation(fields: [workerId], references: [id])
+  version         Int         @default(1)
+  amountAgorot    Int
+  currency        String      @default("ILS")
+  scopeText       String?
+  inclusions      String?
+  assumptions     String?
+  proposedDate    DateTime?
+  estimatedDays   Int?
+  validUntil      DateTime?
+  status          OfferStatus @default(SUBMITTED)
+  declineReason   String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  workOrder WorkOrder?
+
+  @@unique([procurementId, workerId])
+}
+
+// ─── Work Orders ─────────────────────────────────────────────────────────────
+
+model WorkOrder {
+  id                String             @id @default(cuid())
+  requestId         String             @unique
+  request           MaintenanceRequest @relation(fields: [requestId], references: [id])
+  offerId           String             @unique
+  offer             Offer              @relation(fields: [offerId], references: [id])
+  workerId          String
+  worker            User               @relation("WorkerOrders", fields: [workerId], references: [id])
+
+  // Immutable accepted snapshot
+  agreedAmountAgorot Int
+  agreedCurrency     String  @default("ILS")
+  agreedScope        String?
+  agreedSchedule     String?
+  agreedDuration     Int?
+  offerVersion       Int
+  locationSnapshot   String?
+
+  // Timeline actors
+  startedById       String?
+  startedBy         User?    @relation("OrderStarter", fields: [startedById], references: [id])
+  completedById     String?
+  completedBy       User?    @relation("OrderCompleter", fields: [completedById], references: [id])
+  confirmedById     String?
+  confirmedBy       User?    @relation("OrderConfirmer", fields: [confirmedById], references: [id])
+  closedById        String?
+  closedBy          User?    @relation("OrderCloser", fields: [closedById], references: [id])
+  cancelledById     String?
+  cancelledBy       User?    @relation("OrderCanceller", fields: [cancelledById], references: [id])
+
+  completionNotes   String?
+  assignedAt        DateTime  @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+  confirmedAt       DateTime?
+  closedAt          DateTime?
+  cancelledAt       DateTime?
+
+  paymentRecord PaymentRecord?
+  feedback      TenantFeedback?
+  completionAttachments CompletionAttachment[]
+}
+
+// ─── Comments & Attachments ──────────────────────────────────────────────────
+
+model Comment {
+  id        String             @id @default(cuid())
+  requestId String
+  request   MaintenanceRequest @relation(fields: [requestId], references: [id])
+  authorId  String
+  author    User               @relation(fields: [authorId], references: [id])
+  audience  Audience
+  content   String
+  hiddenById String?
+  hiddenBy  User?              @relation("CommentHider", fields: [hiddenById], references: [id])
+  hiddenAt  DateTime?
+  hideReason String?
+  createdAt DateTime           @default(now())
+
+  attachments CommentAttachment[]
+}
+
+model Attachment {
+  id           String            @id @default(cuid())
+  uploaderId   String
+  uploader     User              @relation(fields: [uploaderId], references: [id])
+  storageKey   String            @unique
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  isFinalized  Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+
+  workerEvidence     WorkerEvidence?
+  requestAttachments RequestAttachment[]
+  commentAttachments CommentAttachment[]
+  procurementImages  ProcurementImage[]
+  completionAttachments CompletionAttachment[]
+}
+
+model RequestAttachment {
+  id         String             @id @default(cuid())
+  requestId  String
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id])
+  attachmentId String
+  attachment Attachment         @relation(fields: [attachmentId], references: [id])
+  createdAt  DateTime           @default(now())
+
+  @@unique([requestId, attachmentId])
+}
+
+model CommentAttachment {
+  id           String     @id @default(cuid())
+  commentId    String
+  comment      Comment    @relation(fields: [commentId], references: [id])
+  attachmentId String
+  attachment   Attachment @relation(fields: [attachmentId], references: [id])
+
+  @@unique([commentId, attachmentId])
+}
+
+model ProcurementImage {
+  id            String      @id @default(cuid())
+  procurementId String
+  procurement   Procurement @relation(fields: [procurementId], references: [id])
+  attachmentId  String
+  attachment    Attachment  @relation(fields: [attachmentId], references: [id])
+  sharedWithWorkers Boolean @default(false)
+
+  @@unique([procurementId, attachmentId])
+}
+
+model CompletionAttachment {
+  id           String     @id @default(cuid())
+  workOrderId  String
+  workOrder    WorkOrder  @relation(fields: [workOrderId], references: [id])
+  attachmentId String
+  attachment   Attachment @relation(fields: [attachmentId], references: [id])
+
+  @@unique([workOrderId, attachmentId])
+}
+
+// ─── Payments & Feedback ─────────────────────────────────────────────────────
+
+model PaymentRecord {
+  id                String    @id @default(cuid())
+  workOrderId       String    @unique
+  workOrder         WorkOrder @relation(fields: [workOrderId], references: [id])
+  recordedById      String
+  recordedBy        User      @relation(fields: [recordedById], references: [id])
+  paidAgorot        Int       @default(0)
+  lastPaymentDate   DateTime?
+  lastPaymentRef    String?
+  note              String?
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  history PaymentHistory[]
+}
+
+model PaymentHistory {
+  id              String        @id @default(cuid())
+  paymentRecordId String
+  paymentRecord   PaymentRecord @relation(fields: [paymentRecordId], references: [id])
+  previousAgorot  Int
+  newAgorot       Int
+  reason          String
+  recordedById    String
+  createdAt       DateTime      @default(now())
+}
+
+model TenantFeedback {
+  id          String             @id @default(cuid())
+  workOrderId String             @unique
+  workOrder   WorkOrder          @relation(fields: [workOrderId], references: [id])
+  requestId   String             @unique
+  request     MaintenanceRequest @relation(fields: [requestId], references: [id])
+  tenantId    String
+  tenant      User               @relation("FeedbackTenant", fields: [tenantId], references: [id])
+  workerId    String
+  rating      Int                // 1–5
+  comment     String?
+  hiddenById  String?
+  hiddenBy    User?              @relation("FeedbackModerator", fields: [hiddenById], references: [id])
+  hiddenAt    DateTime?
+  hideReason  String?
+  createdAt   DateTime           @default(now())
+}
+
+// ─── Notifications & Audit ───────────────────────────────────────────────────
+
+model Notification {
+  id               String   @id @default(cuid())
+  recipientId      String
+  recipient        User     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  eventType        String
+  resourceType     String?
+  resourceId       String?
+  messageKey       String
+  messageParams    Json?
+  isRead           Boolean  @default(false)
+  deduplicationKey String?  @unique
+  createdAt        DateTime @default(now())
+  readAt           DateTime?
+}
+
+model AuditEvent {
+  id             String             @id @default(cuid())
+  actorId        String?
+  actor          User?              @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action         String
+  resourceType   String
+  resourceId     String
+  requestId      String?
+  request        MaintenanceRequest? @relation(fields: [requestId], references: [id])
+  previousState  Json?
+  newState       Json?
+  reason         String?
+  correlationKey String?
+  createdAt      DateTime           @default(now())
+}
