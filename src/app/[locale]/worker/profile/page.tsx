@@ -2,12 +2,18 @@ import { getCurrentUser } from "@/server/auth/actions";
 import { redirect } from "@/i18n/routing";
 import { getOrCreateWorkerProfile, updateWorkerDraft, submitWorkerApplication, getActiveCategories, getActiveAreas } from "@/server/services/workers";
 import { revalidatePath } from "next/cache";
+import { redirect as nextRedirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { EvidenceKind, Role } from "@prisma/client";
 import { getLocale } from "next-intl/server";
 import { Link } from "@/i18n/routing";
 
-export default async function WorkerProfilePage() {
+export default async function WorkerProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error: submitError } = await searchParams;
   const locale = await getLocale();
   const user = await getCurrentUser();
   if (!user || user.role !== Role.WORKER) {
@@ -79,13 +85,39 @@ export default async function WorkerProfilePage() {
     "use server";
     const cu = await getCurrentUser();
     if (!cu) return;
+    let errorCode: string | null = null;
     try {
       await submitWorkerApplication(cu);
-      revalidatePath("/[locale]/worker/profile", "page");
-    } catch {
-      // Handled
+    } catch (e) {
+      errorCode = e instanceof Error ? e.message : "UNKNOWN";
+    }
+    revalidatePath("/[locale]/worker/profile", "page");
+    if (errorCode) {
+      nextRedirect(`/${locale}/worker/profile?error=${encodeURIComponent(errorCode)}`);
     }
   }
+
+  const errorMessages: Record<string, { ar: string; en: string }> = {
+    CATEGORY_REQUIRED: {
+      ar: "اختر تخصصاً واحداً على الأقل ثم اضغط «حفظ التعديلات في المسودة» قبل الإرسال.",
+      en: "Select at least one specialty and click “Save Changes as Draft” before submitting.",
+    },
+    AREA_REQUIRED: {
+      ar: "اختر منطقة خدمة واحدة على الأقل ثم اضغط «حفظ التعديلات في المسودة» قبل الإرسال.",
+      en: "Select at least one service area and click “Save Changes as Draft” before submitting.",
+    },
+    EVIDENCE_MINIMUM_REQUIRED: {
+      ar: "أضف نموذج عمل واحداً وشهادة واحدة على الأقل قبل الإرسال.",
+      en: "Add at least one portfolio sample and one certificate before submitting.",
+    },
+    ALREADY_SUBMITTED: {
+      ar: "تم إرسال ملفك مسبقاً وهو قيد المراجعة.",
+      en: "Your profile was already submitted and is under review.",
+    },
+  };
+  const submitErrorText = submitError
+    ? (errorMessages[submitError]?.[isAr ? "ar" : "en"] ?? submitError)
+    : null;
 
   const statusClass =
     profile.status === "APPROVED"
@@ -121,6 +153,12 @@ export default async function WorkerProfilePage() {
           </Link>
         </div>
       </div>
+
+      {submitErrorText && (
+        <div className="p-4 rounded-2xl border border-red-500/40 bg-red-500/10 text-sm font-semibold text-red-700 dark:text-red-300">
+          ⚠️ {submitErrorText}
+        </div>
+      )}
 
       {/* Admin Evaluations Display */}
       {profile.evaluations.length > 0 && (
