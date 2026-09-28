@@ -65,16 +65,8 @@
     "verifyTitle": "Create Account",
     "verifySubtitle": "Creating your account...",
     "verifySuccess": "Account created successfully! 🎉",
-    "otpLabel": "",
-    "otpIncomplete": "",
-    "otpInvalid": "",
-    "otpExpired": "",
-    "otpNotFound": "",
     "verifyButton": "Create Account",
     "redirectingToDashboard": "Redirecting to dashboard...",
-    "didNotReceive": "",
-    "resendOtp": "",
-    "resendIn": "",
     "backToRegister": "Back to registration"
   },
   "requestStatus": {

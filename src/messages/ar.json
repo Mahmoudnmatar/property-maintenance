@@ -65,16 +65,8 @@
     "verifyTitle": "إنشاء الحساب",
     "verifySubtitle": "جاري إنشاء حسابك...",
     "verifySuccess": "تم إنشاء الحساب بنجاح! 🎉",
-    "otpLabel": "",
-    "otpIncomplete": "",
-    "otpInvalid": "",
-    "otpExpired": "",
-    "otpNotFound": "",
     "verifyButton": "إنشاء الحساب",
     "redirectingToDashboard": "جاري التحويل للوحة التحكم...",
-    "didNotReceive": "",
-    "resendOtp": "",
-    "resendIn": "",
     "backToRegister": "العودة لصفحة التسجيل"
   },
   "requestStatus": {

@@ -94,20 +94,6 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 }
 
-// OTP for email verification during registration
-model EmailOtp {
-  id        String   @id @default(cuid())
-  email     String
-  otp       String
-  name      String
-  password  String   // hashed
-  role      String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  @@index([email])
-}
-
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 enum Role {

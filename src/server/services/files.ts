@@ -4,7 +4,11 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
-const UPLOAD_DIR = process.env.STORAGE_LOCAL_DIR || "./storage/uploads";
+// On Vercel the deployment filesystem is read-only; only /tmp is writable (and it is ephemeral).
+// For persistent uploads in production, switch to an object store (e.g. Vercel Blob / S3).
+const UPLOAD_DIR =
+  process.env.STORAGE_LOCAL_DIR ||
+  (process.env.VERCEL ? "/tmp/uploads" : "./storage/uploads");
 const MAX_IMAGE_BYTES = (parseInt(process.env.UPLOAD_IMAGE_MAX_MB || "5", 10)) * 1024 * 1024;
 const MAX_DOC_BYTES = (parseInt(process.env.UPLOAD_DOC_MAX_MB || "10", 10)) * 1024 * 1024;
 

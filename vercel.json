@@ -1,4 +1,4 @@
 {
-  "buildCommand": "prisma generate && next build",
+  "buildCommand": "prisma generate && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && next build",
   "framework": "nextjs"
 }
