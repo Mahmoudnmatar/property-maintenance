@@ -14,16 +14,24 @@ export default async function WorkerOpportunitiesPage() {
 
   const profile = await prisma.workerProfile.findUnique({
     where: { userId: user.id },
+    include: { categories: true },
   });
 
   const isApproved = profile?.status === WorkerStatus.APPROVED;
   const isAr = locale === "ar";
+  const approvedCategoryIds = profile?.categories.map((c) => c.categoryId) ?? [];
 
   const opportunities = isApproved
     ? await prisma.procurement.findMany({
         where: {
           status: ProcurementStatus.OPEN,
           offers: { none: { workerId: user.id } },
+          request: { categoryId: { in: approvedCategoryIds } },
+          OR: [
+            { mode: "PUBLIC" },
+            { mode: "DIRECT", directWorkerId: user.id },
+            { mode: "INVITED", invitations: { some: { workerId: user.id } } },
+          ],
         },
         include: {
           request: {
@@ -108,7 +116,11 @@ export default async function WorkerOpportunitiesPage() {
                     {opp.request.title}
                   </Link>
                   <span className="badge-status badge-procurement text-[10px]">
-                    {opp.mode === "DIRECT" ? (isAr ? "عرض مباشر" : "Direct Request") : (isAr ? "مناقصة عامة" : "Public Tender")}
+                    {opp.mode === "DIRECT"
+                      ? (isAr ? "عرض مباشر" : "Direct Request")
+                      : opp.mode === "INVITED"
+                      ? (isAr ? "مناقصة بدعوة" : "Invited Tender")
+                      : (isAr ? "مناقصة عامة" : "Public Tender")}
                   </span>
                   {opp.request.urgency === "URGENT" && (
                     <span className="badge-status badge-urgent text-[10px]">

@@ -44,10 +44,13 @@ type FullRequest = MaintenanceRequest & {
 
 export default async function RequestDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string; locale: string }>;
+  searchParams: Promise<{ quoteError?: string }>;
 }) {
   const { id, locale } = await params;
+  const { quoteError } = await searchParams;
   const user = await getCurrentUser();
   if (!user) {
     redirect({ href: "/login", locale: locale as "ar" | "en" });
@@ -142,10 +145,18 @@ export default async function RequestDetailPage({
     const scope = formData.get("scope") as string;
 
     if (amountIls > 0) {
-      await submitOrReviseOffer(cu, activeProcurement.id, {
-        amountAgorot: Math.round(amountIls * 100),
-        scopeText: scope,
-      });
+      try {
+        await submitOrReviseOffer(cu, activeProcurement.id, {
+          amountAgorot: Math.round(amountIls * 100),
+          scopeText: scope,
+        });
+      } catch (e) {
+        const code = e instanceof Error ? e.message : "UNKNOWN";
+        redirect({
+          href: `/requests/${id}?quoteError=${encodeURIComponent(code)}`,
+          locale: locale as "ar" | "en",
+        });
+      }
       revalidatePath(`/${locale}/requests/${id}`);
       revalidatePath("/[locale]/requests/[id]", "page");
     }
@@ -442,6 +453,45 @@ export default async function RequestDetailPage({
           {/* Worker can submit offer if procurement is active */}
           {activeProcurement && user.role === Role.WORKER && (
             <div className="p-5 bg-teal-500/10 border border-teal-500/20 rounded-xl space-y-3">
+              {quoteError && (
+                <div className="p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-xs font-semibold text-red-700 dark:text-red-300">
+                  ⚠️{" "}
+                  {
+                    (
+                      {
+                        WORKER_NOT_APPROVED: {
+                          ar: "لازم يتم اعتماد ملفك المهني أولاً قبل تقديم عروض الأسعار.",
+                          en: "Your worker profile must be approved before submitting quotes.",
+                        },
+                        WORKER_CATEGORY_MISMATCH: {
+                          ar: "هذا التخصص غير مضاف لملفك المهني.",
+                          en: "This job's category isn't listed in your worker profile.",
+                        },
+                        NOT_INVITED_TO_DIRECT_REQUEST: {
+                          ar: "هذا العرض المباشر موجّه لفني آخر.",
+                          en: "This direct request is addressed to another technician.",
+                        },
+                        NOT_INVITED_TO_TENDER: {
+                          ar: "لم تتم دعوتك لهذه المناقصة.",
+                          en: "You weren't invited to this tender.",
+                        },
+                        PROCUREMENT_NOT_OPEN: {
+                          ar: "جولة استدراج العروض هذه لم تعد مفتوحة.",
+                          en: "This procurement round is no longer open.",
+                        },
+                        SUBMISSION_DEADLINE_PASSED: {
+                          ar: "انتهى الموعد النهائي لتقديم العروض.",
+                          en: "The submission deadline has passed.",
+                        },
+                        OFFER_ALREADY_ACCEPTED: {
+                          ar: "تم قبول عرض سعر بالفعل لهذا البلاغ.",
+                          en: "An offer has already been accepted for this request.",
+                        },
+                      } as Record<string, { ar: string; en: string }>
+                    )[quoteError]?.[isAr ? "ar" : "en"] ?? quoteError
+                  }
+                </div>
+              )}
               <h4 className="font-bold text-sm text-teal-800 dark:text-teal-200">
                 {isAr ? "تقديم عرض السعر الخاص بك" : "Submit Your Price Quote"}
               </h4>

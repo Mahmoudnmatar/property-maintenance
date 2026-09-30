@@ -433,8 +433,23 @@ export async function getRequestDetails(user: AuthUser, requestId: string) {
 
   const isTenant = request.namedTenantId === user.id;
   const isOwner = request.unit.building.ownerId === user.id;
-  const isWorker = request.workOrder?.workerId === user.id;
+  const isAssignedWorker = request.workOrder?.workerId === user.id;
   const isAdmin = user.role === Role.SUPER_ADMIN;
+
+  // A worker who hasn't been awarded the job yet can still view the request if
+  // they are eligible to bid on it (public tender, directly targeted, or invited),
+  // or if they already submitted an offer on one of its procurement rounds.
+  const isEligibleBidder =
+    user.role === Role.WORKER &&
+    request.procurements.some(
+      (p) =>
+        p.directWorkerId === user.id ||
+        p.invitations.some((inv) => inv.workerId === user.id) ||
+        p.offers.some((o) => o.workerId === user.id) ||
+        (p.mode === "PUBLIC" && p.status === "OPEN")
+    );
+
+  const isWorker = isAssignedWorker || isEligibleBidder;
 
   // Authorization check
   if (!isTenant && !isOwner && !isWorker && !isAdmin) {
@@ -468,12 +483,21 @@ export async function getRequestDetails(user: AuthUser, requestId: string) {
     };
   }
 
-  // Assigned Worker cannot see pre-award private tenant comments or competing offers
+  // Assigned/bidding Worker cannot see pre-award private tenant comments or competing offers
   if (isWorker && !isOwner && !isAdmin) {
     return {
       ...request,
       comments: request.comments.filter((c) => c.audience === Audience.JOB_PARTICIPANTS),
-      procurements: [], // Competitor offers hidden
+      // Show the procurement round(s) this worker is eligible to bid on / already bid on,
+      // but strip out every other worker's offer so quotes stay competitive/blind.
+      procurements: isAssignedWorker
+        ? []
+        : request.procurements
+            .filter((p) => p.directWorkerId === user.id || p.invitations.some((inv) => inv.workerId === user.id) || p.offers.some((o) => o.workerId === user.id) || (p.mode === "PUBLIC" && p.status === "OPEN"))
+            .map((p) => ({
+              ...p,
+              offers: p.offers.filter((o) => o.workerId === user.id),
+            })),
     };
   }
 
